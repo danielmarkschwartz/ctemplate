@@ -1,9 +1,21 @@
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 
 #define BUF_SIZE 1024
+#define BUF_APPEND(buf,c) do{assert(buf##_n<BUF_SIZE); (buf)[buf##_n++] = (char)(c);}while(0)
 #define error(errmsg, ...) do{ fprintf(stderr, "ERROR: " errmsg ,##__VA_ARGS__); exit(1); }while(0)
+
+int match_double(int i, char c, FILE *f) {
+    if(i == c) {
+        i = fgetc(f);
+        if(i == c) return 0;
+        ungetc(i, f);
+        return c;
+    }
+    return i;
+}
 
 int main(int argc, char **argv) {
     if(argc != 2) error("Expected one argument: ctemplate <template>");
@@ -13,50 +25,34 @@ int main(int argc, char **argv) {
 
     char print_buf[BUF_SIZE];
     char select_buf[BUF_SIZE];
-    size_t p_n = 0, s_n = 0;
+    size_t print_buf_n = 0, select_buf_n = 0;
     enum {START, SELECT} state = START;
     int c;
 
     while(c = fgetc(template), c != EOF) {
         switch(state) {
         case START:
-            if(c == '{') {
-                c = fgetc(template);
-                if( c == '{') {
-                    assert(p_n < BUF_SIZE);
-                    print_buf[p_n] = '\0';
-                    printf("print \"%s\"\n", print_buf);
-                    p_n = 0;
-                    state = SELECT;
-                    break;
-                }
-
-                ungetc(c, template);
-                c = '{';
+            if((c = match_double(c, '{', template)) == 0) {
+                state = SELECT;
+                BUF_APPEND(print_buf, '\0');
+                printf("print \"%s\"\n", print_buf);
+                print_buf_n = 0;
+                break;
             }
 
-            assert(p_n < BUF_SIZE);
-            print_buf[p_n++] = (char)c;
+            BUF_APPEND(print_buf, c);
             break;
 
         case SELECT:
-            if(c == '}') {
-                c = fgetc(template);
-                if( c == '}') {
-                    state = START;
-                    assert(s_n < BUF_SIZE);
-                    select_buf[s_n] = '\0';
-                    printf("select \"%s\"\n", select_buf);
-                    s_n = 0;
-                    break;
-                }
-
-                ungetc(c, template);
-                c = '}';
+            if((c = match_double(c, '}', template)) == 0) {
+                state = START;
+                BUF_APPEND(select_buf, '\0');
+                printf("select \"%s\"\n", select_buf);
+                select_buf_n = 0;
+                break;
             }
 
-            assert(s_n < BUF_SIZE);
-            select_buf[s_n++] = (char)c;
+            BUF_APPEND(select_buf, c);
             break;
 
         default: assert(0); //Unexpected state value
@@ -65,9 +61,8 @@ int main(int argc, char **argv) {
 
     if(state != START) error("Unmatched {{");
 
-    if(p_n > 0){
-        assert(p_n < BUF_SIZE);
-        print_buf[p_n] = '\0';
+    if(print_buf_n > 0){
+        BUF_APPEND(print_buf, '\0');
         printf("print \"%s\"\n", print_buf);
     }
 
