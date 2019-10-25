@@ -29,14 +29,13 @@ Template tags are surrounded by `{{` `}}`. Available invocations include:
   `--table` is specified and SQL TABLE clause differs from `--table` value. This
   allows the invoker to effectively filter input data.
 - `{{sql_query}}` --- inserts the HTML escaped output of the SQL query, or
-  nothing if NULL. If more than one row is returned, the compiled template will
-  abort with error.
+  nothing if NULL. 
 - `{{&sql_query}}` --- inserts the raw un-escaped output of the SQL query, or
-  nothing if NULL. If more than one row is returned, the compiled template will
-  abort with error.
+  nothing if NULL. 
 - `{{%sql_query}}` --- inserts url escaped output of the SQL query, or nothing
-  if NULL. If more than one row is returned, the compiled template will abort
-      with error.
+  if NULL. 
+- `{{_sql_query}}` --- inserts query result with spaces replaced with '-' or
+  nothing if NULL.
 - `{{?sql_query}} ... {{/}}` --- Inserts code between tags iff SQL query returns
   a non-NULL, non-zero, non-empty string, or not FALSE value.
 - `{{^sql_query}} ... {{/}}` --- Inserts code between tags iff SQL query returns

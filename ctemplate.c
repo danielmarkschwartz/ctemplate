@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define BUF_SIZE 1024
+#define BUF_SIZE (1024*1024)
 #define TEMPLATES_MAX 10
 #define BUF_APPEND(buf,c) do{assert(buf##_n<BUF_SIZE); (buf)[buf##_n++] = (c);}while(0)
 #define error(errmsg, ...) do{ fprintf(stderr, "ERROR: " errmsg ,##__VA_ARGS__); exit(1); }while(0)
@@ -47,6 +47,15 @@ void print_preamble(void) {
             "       if(isalnum(*s) || *s == '-' || *s == '.' || *s == '_' || *s == '~')\n"
             "           putchar(*s);\n"
             "       else printf(\"%%%x\", *s);\n"
+            "   }\n"
+            "}\n"
+            "\n"
+            "void print_esc_space(char *s){\n"
+            "   assert(s);\n"
+            "   for(;*s;s++){"
+            "       if(*s != ' ')\n"
+            "           putchar(*s);\n"
+            "       else putchar('_');\n"
             "   }\n"
             "}\n"
             "\n"
@@ -180,7 +189,7 @@ int main(int argc, char **argv) {
     char buf[BUF_SIZE];
     size_t buf_n = 0;
     enum {START, SELECT, SELECT_TYPE, SELECT_END} state = START;
-    enum {UNESC, URLESC, HTMLESC, ASSERT, NOTASSERT, ENDBLOCK, FOREACH, FORELSE, EXECUTE, INCLUDE, SUBTEMPLATE} type;
+    enum {UNESC, URLESC, SPACEESC, HTMLESC, ASSERT, NOTASSERT, ENDBLOCK, FOREACH, FORELSE, EXECUTE, INCLUDE, SUBTEMPLATE} type;
     int c;
 
     print_preamble();
@@ -218,6 +227,7 @@ int main(int argc, char **argv) {
             switch(c) {
                 case '&': type = UNESC; continue;
                 case '%': type = URLESC; continue;
+                case '_': type = SPACEESC; continue;
                 case '?': type = ASSERT; continue;
                 case '^': type = NOTASSERT; continue;
                 case '/': type = ENDBLOCK; continue;
@@ -249,6 +259,7 @@ int main(int argc, char **argv) {
                 switch(type) {
                     case HTMLESC: puts("    if(vals_ok(vals)) print_esc_html(vals[0]); done();"); break;
                     case URLESC: puts("    if(vals_ok(vals)) print_esc_url(vals[0]); done();"); break;
+                    case SPACEESC: puts("    if(vals_ok(vals)) print_esc_space(vals[0]); done();"); break;
                     case UNESC: puts("    if(vals_ok(vals)) fputs(vals[0], stdout); done();"); break;
                     case ASSERT: puts("    if(vals_ok(vals)){done();"); break;
                     case NOTASSERT: puts("    if(!vals_ok(vals)){done();"); break;

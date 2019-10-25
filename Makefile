@@ -10,3 +10,6 @@ ctemplate: *.c
 
 clean:
 	rm ctemplate tests/out*
+
+install: ctemplate
+	cp ctemplate ~/bin/
