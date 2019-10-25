@@ -20,14 +20,18 @@ void print_preamble(void) {
             "\n"
             "sqlite3 *db;\n"
             "\n"
-            "char **select(char *sel, size_t n){\n"
+            "char **select(char *sel, size_t n, char *tbl, char *where){\n"
             "   sqlite3_stmt *res;\n"
             "   char sql[SQL_MAX];\n"
-            "   snprintf(sql, SQL_MAX, \"SELECT %s FROM users\", sel);\n"
+            "   int got = snprintf(sql, SQL_MAX, \"SELECT %s\", sel);\n"
+            "   if(tbl && strstr(sel, \"FROM\") == NULL)\n"
+            "       got += snprintf(&sql[got], SQL_MAX, \" FROM %s\", tbl);\n"
+            "   if(where && strstr(sel, \"WHERE\") == NULL)\n"
+            "       got += snprintf(&sql[got], SQL_MAX, \" WHERE %s\", where);\n"
             "\n"
             "   int rc = sqlite3_prepare_v2(db, sql, -1, &res, 0);\n"
             "   if (rc != SQLITE_OK) \n"
-            "       error(\"Failed to execute statement: %s\\n\", sqlite3_errmsg(db));\n"
+            "       error(\"Failed to execute statement: %s\\nstatement: '%s'\\n\", sqlite3_errmsg(db), sql);\n"
             "\n"
             "   int step = sqlite3_step(res);\n"
             "   if (step != SQLITE_ROW) return NULL;\n"
@@ -44,6 +48,22 @@ void print_preamble(void) {
             "\n"
             "int main(int argc, char **argv){\n"
             "   char *err_msg = 0;\n"
+            "\n"
+            "   char *where = NULL;\n"
+            "   char *tbl = NULL;\n"
+            "\n"
+            "   for(int i = 1; i < argc; i++) {\n"
+            "       if(strcmp(\"--where\", argv[i]) == 0) {\n"
+            "           i++;\n"
+            "           if(i >= argc) error(\"Expected argument after --where\");\n"
+            "           where = argv[i];\n"
+            "       }\n"
+            "       else if(strcmp(\"--table\", argv[i]) == 0) {\n"
+            "           i++;\n"
+            "           if(i >= argc) error(\"Expected argument after --table\");\n"
+            "           tbl = argv[i];\n"
+            "       }\n"
+            "   }\n"
             "\n"
             "   int rc = sqlite3_open(argv[1], &db);\n"
             "   if (rc != SQLITE_OK)\n"
@@ -72,8 +92,8 @@ int match_double(int i, char c, FILE *f) {
     return i;
 }
 
-char fmt[BUF_SIZE], *fmt_param[BUF_SIZE];
-size_t fmt_n = 0, fmt_param_n = 0;
+char fmt[BUF_SIZE];
+size_t fmt_n = 0;
 
 void fmt_append_str(char *s);
 
@@ -87,24 +107,23 @@ void fmt_append_str(char *s) {
     while(*s) fmt_append(*(s++));
 }
 
-void fmt_append_param(char *s) {
-    assert(s);
-    BUF_APPEND(fmt_param, s);
-}
+void parse_sql(char *s, char *tbl, char *where, size_t n) {
+    char *w;
+    for(;;) {
+        w = strsep(&s, " ");
+        if(w == NULL) break;
 
-void fmt_dump(void) {
-    if(fmt_param_n > 0) {
-        printf("vals = select(\"");
-        for(size_t i = 0; i < fmt_param_n; i++) {
-            if(i > 0) printf(", ");
-            printf("%s", fmt_param[i]);
+        if(strcmp("FROM", w) == 0) {
+            w = strsep(&s, " ");
+            snprintf(tbl, n, "\"%s\"", w);
+        } else
+        if(strcmp("WHERE", w) == 0) {
+            w = strsep(&s, " ");
+            snprintf(where, n, "\"%s\"", w);
+        } else {
         }
-        printf("\", %lu);\n", fmt_param_n);
+
     }
-    printf("printf(\"%.*s\"", (int)fmt_n, fmt);
-    for(size_t i = 0; i < fmt_param_n; i++)
-        printf(", vals[%lu]", i);
-    printf(");\n");
 }
 
 int main(int argc, char **argv) {
@@ -125,6 +144,8 @@ int main(int argc, char **argv) {
         case START:
             if((c = match_double(c, '{', template)) == 0) {
                 state = SELECT;
+                printf("    fputs(\"%.*s\", stdout);\n", (int)fmt_n, fmt);
+                fmt_n = 0;
                 break;
             }
 
@@ -135,9 +156,16 @@ int main(int argc, char **argv) {
             if((c = match_double(c, '}', template)) == 0) {
                 state = START;
                 BUF_APPEND(select_buf, '\0');
-                fmt_append_param(strdup(select_buf));
+
+                char where[BUF_SIZE] = {0}, tbl[BUF_SIZE] = {0};
+                parse_sql(select_buf, tbl, where, BUF_SIZE);
+
+                printf("    vals = select(\"%s\", 1, %s, %s);\n",
+                        select_buf,
+                        tbl[0]?tbl:"tbl",
+                        where[0]?where:"where");
+                puts("    printf(\"%s\", vals[0]);");
                 select_buf_n = 0;
-                fmt_append_str("%s");
                 break;
             }
 
@@ -149,8 +177,7 @@ int main(int argc, char **argv) {
     }
 
     if(state != START) error("Unmatched {{");
-
-    fmt_dump();
+    if(fmt_n > 0) printf("    fputs(\"%.*s\", stdout);\n", (int)fmt_n, fmt);
 
     print_final();
 
