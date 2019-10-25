@@ -174,7 +174,7 @@ int main(int argc, char **argv) {
     char buf[BUF_SIZE];
     size_t buf_n = 0;
     enum {START, SELECT, SELECT_TYPE, SELECT_END} state = START;
-    enum {UNESC, URLESC, HTMLESC, ASSERT, NOTASSERT, ENDBLOCK, FOREACH, FORELSE} type;
+    enum {UNESC, URLESC, HTMLESC, ASSERT, NOTASSERT, ENDBLOCK, FOREACH, FORELSE, EXECUTE} type;
     int c;
 
     print_preamble();
@@ -210,6 +210,7 @@ int main(int argc, char **argv) {
                 case '/': type = ENDBLOCK; continue;
                 case '#': type = FOREACH; continue;
                 case '~': type = FORELSE; continue;
+                case '!': type = EXECUTE; continue;
                 default: type = HTMLESC;
             }
             //fallthrough
@@ -255,8 +256,12 @@ int main(int argc, char **argv) {
                                 );
                         break;
                     case FORELSE:
-                        puts("}if(rows_n == 0){");
+                        puts("   }if(rows_n == 0){");
                         break;
+                    case EXECUTE:
+                        puts("  fflush(stdout);system(vals[0]); done();");
+                        break;
+
                     default: assert(0); //Unknown tag type
                 }
 
