@@ -51,5 +51,7 @@ Template tags are surrounded by `{{` `}}`. Available invocations include:
 - `{{!command sql_query ...}}` --- runs a system command with 0 or more sql
   query arguments. These arguments are replaced with the results the sql query
   values of this row.
-- `{{<sql_query}}` --- includes given local file, copies text directly without
-  any escaping performed
+- `{{<sql_query}}` --- includes given local file at template run time, copies
+  text directly without any escaping performed.
+- `{{>file}}` --- includes subtemplate file as if it were a file copy pasted
+  in at this point in the template file. Occurs at template compile time.

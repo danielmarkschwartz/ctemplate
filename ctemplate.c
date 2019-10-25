@@ -5,6 +5,7 @@
 #include <string.h>
 
 #define BUF_SIZE 1024
+#define TEMPLATES_MAX 10
 #define BUF_APPEND(buf,c) do{assert(buf##_n<BUF_SIZE); (buf)[buf##_n++] = (c);}while(0)
 #define error(errmsg, ...) do{ fprintf(stderr, "ERROR: " errmsg ,##__VA_ARGS__); exit(1); }while(0)
 
@@ -171,18 +172,27 @@ void parse_sql(char *s, char *tbl, char *where, size_t n) {
 int main(int argc, char **argv) {
     if(argc != 2) error("Expected one argument: ctemplate <template>");
 
-    FILE *template = fopen(argv[1], "r");
-    if(!template) error("Couldn't open template file \"%s\" for reading\n", argv[1]);
+    FILE *templates[TEMPLATES_MAX];
+    int templates_i = 0;
+    templates[templates_i] = fopen(argv[1], "r");
+    if(!templates[templates_i]) error("Couldn't open template file \"%s\" for reading\n", argv[1]);
 
     char buf[BUF_SIZE];
     size_t buf_n = 0;
     enum {START, SELECT, SELECT_TYPE, SELECT_END} state = START;
-    enum {UNESC, URLESC, HTMLESC, ASSERT, NOTASSERT, ENDBLOCK, FOREACH, FORELSE, EXECUTE, INCLUDE} type;
+    enum {UNESC, URLESC, HTMLESC, ASSERT, NOTASSERT, ENDBLOCK, FOREACH, FORELSE, EXECUTE, INCLUDE, SUBTEMPLATE} type;
     int c;
 
     print_preamble();
 
-    while(c = fgetc(template), c != EOF) {
+    for(;;) {
+        c = fgetc(templates[templates_i]);
+        if(c == EOF) {
+            if(templates_i > 0) { fclose(templates[templates_i--]); continue;}
+            else break;
+        }
+
+
         switch(state) {
         case SELECT_END:
             state = START;
@@ -190,7 +200,7 @@ int main(int argc, char **argv) {
             //fallthrough
 
         case START:
-            if((c = match_double(c, '{', template)) == 0) {
+            if((c = match_double(c, '{', templates[templates_i])) == 0) {
                 state = SELECT_TYPE;
                 BUF_APPEND(buf, '\0');
                 fputs("    fputs(\"", stdout);
@@ -215,19 +225,20 @@ int main(int argc, char **argv) {
                 case '~': type = FORELSE; continue;
                 case '!': type = EXECUTE; continue;
                 case '<': type = INCLUDE; continue;
+                case '>': type = SUBTEMPLATE; continue;
                 default: type = HTMLESC;
             }
             //fallthrough
 
         case SELECT:
-            if((c = match_double(c, '}', template)) == 0) {
+            if((c = match_double(c, '}', templates[templates_i])) == 0) {
                 state = SELECT_END;
                 BUF_APPEND(buf, '\0');
 
                 char where[BUF_SIZE] = {0}, tbl[BUF_SIZE] = {0};
                 parse_sql(buf, tbl, where, BUF_SIZE);
 
-                if(type != ENDBLOCK && type != FOREACH && type != FORELSE) {
+                if(type != ENDBLOCK && type != FOREACH && type != FORELSE && type != SUBTEMPLATE) {
                     printf("    vals = select(\"");
                     print_cstr_esc(buf);
                     printf("\", 1, %s, %s);\n",
@@ -272,6 +283,12 @@ int main(int argc, char **argv) {
                              "  while((got = fread(buf, 1, BUF_SIZE, file)))\n"
                              "      while((got -= fwrite(buf, 1, got, stdout)));\n"
                              );
+                        break;
+                    case SUBTEMPLATE:
+                        templates_i++;
+                        if(templates_i >= TEMPLATES_MAX) error("Max template inclusion depth exceeded: %i", TEMPLATES_MAX);
+                        templates[templates_i] = fopen(buf, "r");
+                        if(templates[templates_i] == NULL) error("Couldn't open subtemplate %s", buf);
                         break;
 
                     default: assert(0); //Unknown tag type
