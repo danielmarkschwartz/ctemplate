@@ -156,14 +156,19 @@ int main(int argc, char **argv) {
 
     char buf[BUF_SIZE];
     size_t buf_n = 0;
-    enum {START, SELECT, SELECT_TYPE} state = START;
-    enum {UNESC, URLESC, HTMLESC} type;
+    enum {START, SELECT, SELECT_TYPE, SELECT_END} state = START;
+    enum {UNESC, URLESC, HTMLESC, ASSERT, NOTASSERT, ENDBLOCK} type;
     int c;
 
     print_preamble();
 
     while(c = fgetc(template), c != EOF) {
         switch(state) {
+        case SELECT_END:
+            if(c == '\n') break;
+            state = START;
+            //fallthrough
+
         case START:
             if((c = match_double(c, '{', template)) == 0) {
                 state = SELECT_TYPE;
@@ -183,27 +188,36 @@ int main(int argc, char **argv) {
             switch(c) {
                 case '&': type = UNESC; continue;
                 case '%': type = URLESC; continue;
+                case '?': type = ASSERT; continue;
+                case '^': type = NOTASSERT; continue;
+                case '/': type = ENDBLOCK; continue;
                 default: type = HTMLESC;
             }
             //fallthrough
 
         case SELECT:
             if((c = match_double(c, '}', template)) == 0) {
-                state = START;
+                state = SELECT_END;
                 BUF_APPEND(buf, '\0');
 
                 char where[BUF_SIZE] = {0}, tbl[BUF_SIZE] = {0};
                 parse_sql(buf, tbl, where, BUF_SIZE);
 
-                printf("    vals = select(\"");
-                print_cstr_esc(buf);
-                printf("\", 1, %s, %s);\n",
-                        tbl[0]?tbl:"tbl",
-                        where[0]?where:"where");
+                if(type != ENDBLOCK) {
+                    printf("    vals = select(\"");
+                    print_cstr_esc(buf);
+                    printf("\", 1, %s, %s);\n",
+                            tbl[0]?tbl:"tbl",
+                            where[0]?where:"where");
+                }
+
                 switch(type) {
                     case HTMLESC: puts("    print_esc_html(vals[0]);"); break;
                     case URLESC: puts("    print_esc_url(vals[0]);"); break;
                     case UNESC: puts("    fputs(vals[0], stdout);"); break;
+                    case ASSERT: puts("    if(vals && vals[0] && strlen(vals[0]) > 0 && strcmp(vals[0], \"0\") != 0){"); break;
+                    case NOTASSERT: puts("    if(!(vals && vals[0] && strlen(vals[0]) > 0 && strcmp(vals[0], \"0\")) != 0){"); break;
+                    case ENDBLOCK: puts("    }"); break;
                     default: assert(0); //Unknown tag type
                 }
 
@@ -218,7 +232,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    if(state != START) error("Unmatched {{");
+    if(state != START && state != SELECT_END) error("Unmatched {{");
     if(buf_n > 0) {
         BUF_APPEND(buf, '\0');
         fputs("    fputs(\"", stdout);

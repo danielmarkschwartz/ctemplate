@@ -1,2 +1,14 @@
 Hello {{"<>&"}} {{&"<>&"}} {{%"url&encode"}} {{name}} (user id {{id}})!
 
+{{?name WHERE id=2}}
+True 1
+{{/}}
+{{^name WHERE id=2}}
+False 1
+{{/}}
+{{?name WHERE id=3}}
+False 2
+{{/}}
+{{^name WHERE id=3}}
+True 2
+{{/}}
