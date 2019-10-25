@@ -18,9 +18,15 @@ void print_preamble(void) {
             "#include <sqlite3.h>\n"
             "\n"
             "#define SQL_MAX 1024\n"
+            "#define ROWS_MAX 1024\n"
+            "#define BUF_SIZE 1024\n"
             "#define error(errmsg, ...) do{ fprintf(stderr, \"ERROR: \" errmsg ,##__VA_ARGS__); exit(1); }while(0)\n"
             "\n"
             "sqlite3 *db;\n"
+            "\n"
+            "int vals_ok(char **vals){\n"
+            "   return vals && vals[0] && strlen(vals[0]) > 0 && strcmp(vals[0], \"0\") != 0;\n"
+            "}\n"
             "\n"
             "void print_esc_html(char *s){\n"
             "   assert(s);\n"
@@ -43,29 +49,38 @@ void print_preamble(void) {
             "   }\n"
             "}\n"
             "\n"
-            "char **select(char *sel, size_t n, char *tbl, char *where){\n"
-            "   sqlite3_stmt *res;\n"
-            "   char sql[SQL_MAX];\n"
-            "   int got = snprintf(sql, SQL_MAX, \"SELECT %s\", sel);\n"
-            "   if(tbl && strstr(sel, \"FROM\") == NULL)\n"
-            "       got += snprintf(&sql[got], SQL_MAX, \" FROM %s\", tbl);\n"
-            "   if(where && strstr(sel, \"WHERE\") == NULL)\n"
-            "       got += snprintf(&sql[got], SQL_MAX, \" WHERE %s\", where);\n"
+            "sqlite3_stmt *res = NULL;\n"
             "\n"
-            "   int rc = sqlite3_prepare_v2(db, sql, -1, &res, 0);\n"
-            "   if (rc != SQLITE_OK) \n"
-            "       error(\"Failed to execute statement: %s\\nstatement: '%s'\\n\", sqlite3_errmsg(db), sql);\n"
+            "void done(void){\n"
+            "   if(res){\n"
+            "       sqlite3_finalize(res);\n"
+            "       res = NULL;\n"
+            "   }\n"
+            "}\n"
+            "\n"
+            "char **select(char *sel, size_t n, char *tbl, char *where){\n"
+            "   if(!res) {"
+            "       char sql[SQL_MAX];\n"
+            "       int got = snprintf(sql, SQL_MAX, \"SELECT %s\", sel);\n"
+            "       if(tbl && strstr(sel, \"FROM\") == NULL)\n"
+            "           got += snprintf(&sql[got], SQL_MAX, \" FROM %s\", tbl);\n"
+            "       if(where && strstr(sel, \"WHERE\") == NULL)\n"
+            "           got += snprintf(&sql[got], SQL_MAX, \" WHERE %s\", where);\n"
+            "\n"
+            "       int rc = sqlite3_prepare_v2(db, sql, -1, &res, 0);\n"
+            "       if (rc != SQLITE_OK) \n"
+            "           error(\"Failed to execute statement: %s\\nstatement: '%s'\\n\", sqlite3_errmsg(db), sql);\n"
+            "   }\n"
             "\n"
             "   int step = sqlite3_step(res);\n"
-            "   if (step != SQLITE_ROW) return NULL;\n"
+            "   if (step != SQLITE_ROW) {done(); return NULL;}\n"
             "\n"
             "   char **vals = malloc(sizeof(*vals) * n);\n"
-            "   if(!vals) return NULL;\n"
+            "   if(!vals) {done(); return NULL;}\n"
             "\n"
             "   for(size_t i = 0; i < n; i++)\n"
             "       vals[i] = strdup((const char *)sqlite3_column_text(res, i));\n"
             "\n"
-            "   sqlite3_finalize(res);\n"
             "   return vals;\n"
             "}\n"
             "\n"
@@ -74,6 +89,8 @@ void print_preamble(void) {
             "\n"
             "   char *where = NULL;\n"
             "   char *tbl = NULL;\n"
+            "   char *rows[ROWS_MAX];\n"
+            "   size_t rows_n = 0;\n"
             "\n"
             "   for(int i = 1; i < argc; i++) {\n"
             "       if(strcmp(\"--where\", argv[i]) == 0) {\n"
@@ -157,7 +174,7 @@ int main(int argc, char **argv) {
     char buf[BUF_SIZE];
     size_t buf_n = 0;
     enum {START, SELECT, SELECT_TYPE, SELECT_END} state = START;
-    enum {UNESC, URLESC, HTMLESC, ASSERT, NOTASSERT, ENDBLOCK} type;
+    enum {UNESC, URLESC, HTMLESC, ASSERT, NOTASSERT, ENDBLOCK, FOREACH, FORELSE} type;
     int c;
 
     print_preamble();
@@ -165,8 +182,8 @@ int main(int argc, char **argv) {
     while(c = fgetc(template), c != EOF) {
         switch(state) {
         case SELECT_END:
-            if(c == '\n') break;
             state = START;
+            if(c == '\n') break;
             //fallthrough
 
         case START:
@@ -191,6 +208,8 @@ int main(int argc, char **argv) {
                 case '?': type = ASSERT; continue;
                 case '^': type = NOTASSERT; continue;
                 case '/': type = ENDBLOCK; continue;
+                case '#': type = FOREACH; continue;
+                case '~': type = FORELSE; continue;
                 default: type = HTMLESC;
             }
             //fallthrough
@@ -203,7 +222,7 @@ int main(int argc, char **argv) {
                 char where[BUF_SIZE] = {0}, tbl[BUF_SIZE] = {0};
                 parse_sql(buf, tbl, where, BUF_SIZE);
 
-                if(type != ENDBLOCK) {
+                if(type != ENDBLOCK && type != FOREACH && type != FORELSE) {
                     printf("    vals = select(\"");
                     print_cstr_esc(buf);
                     printf("\", 1, %s, %s);\n",
@@ -212,12 +231,32 @@ int main(int argc, char **argv) {
                 }
 
                 switch(type) {
-                    case HTMLESC: puts("    print_esc_html(vals[0]);"); break;
-                    case URLESC: puts("    print_esc_url(vals[0]);"); break;
-                    case UNESC: puts("    fputs(vals[0], stdout);"); break;
-                    case ASSERT: puts("    if(vals && vals[0] && strlen(vals[0]) > 0 && strcmp(vals[0], \"0\") != 0){"); break;
-                    case NOTASSERT: puts("    if(!(vals && vals[0] && strlen(vals[0]) > 0 && strcmp(vals[0], \"0\")) != 0){"); break;
+                    case HTMLESC: puts("    print_esc_html(vals[0]); done();"); break;
+                    case URLESC: puts("    print_esc_url(vals[0]); done();"); break;
+                    case UNESC: puts("    fputs(vals[0], stdout); done();"); break;
+                    case ASSERT: puts("    if(vals_ok(vals)){done();"); break;
+                    case NOTASSERT: puts("    if(!vals_ok(vals)){done();"); break;
                     case ENDBLOCK: puts("    }"); break;
+                    case FOREACH:
+                        fputs(
+                             "    vals = select(\"rowid\", 1, tbl, \"", stdout);
+                        print_cstr_esc(buf);
+                        puts("\");\n"
+                             "    rows_n = 0;\n"
+                             "    while(vals) {\n"
+                             "        assert(rows_n < ROWS_MAX);\n"
+                             "        rows[rows_n++] = vals[0];\n"
+                             "        vals = select(NULL, 1, NULL, NULL);\n"
+                             "    }\n"
+                             "    for(int i = 0; i < rows_n; i++){\n"
+                             "        char where_buf[BUF_SIZE];\n"
+                             "        snprintf(where_buf, BUF_SIZE, \"rowid=%s\", rows[i]);\n"
+                             "        char *where = where_buf;\n"
+                                );
+                        break;
+                    case FORELSE:
+                        puts("}if(rows_n == 0){");
+                        break;
                     default: assert(0); //Unknown tag type
                 }
 

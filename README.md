@@ -41,7 +41,7 @@ Template tags are surrounded by `{{` `}}`. Available invocations include:
   a non-NULL, non-zero, non-empty string, or not FALSE value.
 - `{{^sql_query}} ... {{/}}` --- Inserts code between tags iff SQL query returns
   a NULL, zero, empty string, FALSE value.
-- `{{#where_clause}} ... {{^}} ... {{/}}` --- Inserts code once for each row of
+- `{{#where_clause}} ... {{~}} ... {{/}}` --- Inserts code once for each row of
   data returned by where clause. FROM clause may be provided, or is otherwise
   inferred from command line. LIMIT, etc clauses may also be used. Command line
   `--where` clauses are AND'ed to produce final query, if tables match.

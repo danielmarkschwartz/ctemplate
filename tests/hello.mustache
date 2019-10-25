@@ -12,3 +12,17 @@ False 2
 {{^name WHERE id=3}}
 True 2
 {{/}}
+
+{{#id<=2}}
+True: {{name}}
+
+{{~}}
+False 3
+{{/}}
+
+{{#id>2}}
+FALSE: {{name}}
+
+{{~}}
+True 4
+{{/}}
