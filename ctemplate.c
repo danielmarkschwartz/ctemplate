@@ -10,6 +10,8 @@
 
 void print_preamble(void) {
     puts(
+            "#include <assert.h>\n"
+            "#include <ctype.h>\n"
             "#include <stdio.h>\n"
             "#include <stdlib.h>\n"
             "#include <strings.h>\n"
@@ -19,6 +21,27 @@ void print_preamble(void) {
             "#define error(errmsg, ...) do{ fprintf(stderr, \"ERROR: \" errmsg ,##__VA_ARGS__); exit(1); }while(0)\n"
             "\n"
             "sqlite3 *db;\n"
+            "\n"
+            "void print_esc_html(char *s){\n"
+            "   assert(s);\n"
+            "   for(;*s;s++){"
+            "       switch(*s){\n"
+            "           case '<': fputs(\"&lt;\", stdout); break;\n"
+            "           case '>': fputs(\"&gt;\", stdout); break;\n"
+            "           case '&': fputs(\"&amp;\", stdout); break;\n"
+            "           default: putchar(*s);\n"
+            "       }\n"
+            "   }\n"
+            "}\n"
+            "\n"
+            "void print_esc_url(char *s){\n"
+            "   assert(s);\n"
+            "   for(;*s;s++){"
+            "       if(isalnum(*s) || *s == '-' || *s == '.' || *s == '_' || *s == '~')\n"
+            "           putchar(*s);\n"
+            "       else printf(\"%%%x\", *s);\n"
+            "   }\n"
+            "}\n"
             "\n"
             "char **select(char *sel, size_t n, char *tbl, char *where){\n"
             "   sqlite3_stmt *res;\n"
@@ -133,7 +156,8 @@ int main(int argc, char **argv) {
 
     char buf[BUF_SIZE];
     size_t buf_n = 0;
-    enum {START, SELECT} state = START;
+    enum {START, SELECT, SELECT_TYPE} state = START;
+    enum {UNESC, URLESC, HTMLESC} type;
     int c;
 
     print_preamble();
@@ -142,7 +166,7 @@ int main(int argc, char **argv) {
         switch(state) {
         case START:
             if((c = match_double(c, '{', template)) == 0) {
-                state = SELECT;
+                state = SELECT_TYPE;
                 BUF_APPEND(buf, '\0');
                 fputs("    fputs(\"", stdout);
                 print_cstr_esc(buf);
@@ -153,6 +177,15 @@ int main(int argc, char **argv) {
 
             BUF_APPEND(buf, c);
             break;
+
+        case SELECT_TYPE:
+            state = SELECT;
+            switch(c) {
+                case '&': type = UNESC; continue;
+                case '%': type = URLESC; continue;
+                default: type = HTMLESC;
+            }
+            //fallthrough
 
         case SELECT:
             if((c = match_double(c, '}', template)) == 0) {
@@ -167,7 +200,13 @@ int main(int argc, char **argv) {
                 printf("\", 1, %s, %s);\n",
                         tbl[0]?tbl:"tbl",
                         where[0]?where:"where");
-                puts("    printf(\"%s\", vals[0]);");
+                switch(type) {
+                    case HTMLESC: puts("    print_esc_html(vals[0]);"); break;
+                    case URLESC: puts("    print_esc_url(vals[0]);"); break;
+                    case UNESC: puts("    fputs(vals[0], stdout);"); break;
+                    default: assert(0); //Unknown tag type
+                }
+
                 buf_n = 0;
                 break;
             }
