@@ -51,3 +51,5 @@ Template tags are surrounded by `{{` `}}`. Available invocations include:
 - `{{!command sql_query ...}}` --- runs a system command with 0 or more sql
   query arguments. These arguments are replaced with the results the sql query
   values of this row.
+- `{{<sql_query}}` --- includes given local file, evaluating the
+  contents as if they were copy pasted at this point in the file

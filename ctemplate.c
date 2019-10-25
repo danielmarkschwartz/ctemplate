@@ -82,6 +82,20 @@ void print_final(void) {
           );
 }
 
+//Prints to std out escaping newline, backslash, and newlines
+//suitable for inclusion in a C string
+void print_cstr_esc(char *s) {
+    assert(s);
+    for(;*s;s++) {
+        switch(*s) {
+            case '\n': fputs("\\n", stdout); break;
+            case '\\': fputs("\\\\", stdout); break;
+            case '"': fputs("\\\"", stdout); break;
+            default: putchar(*s);
+        }
+    }
+}
+
 int match_double(int i, char c, FILE *f) {
     if(i == c) {
         i = fgetc(f);
@@ -90,21 +104,6 @@ int match_double(int i, char c, FILE *f) {
         return c;
     }
     return i;
-}
-
-char fmt[BUF_SIZE];
-size_t fmt_n = 0;
-
-void fmt_append_str(char *s);
-
-void fmt_append(char c) {
-    if(c == '\n') fmt_append_str("\\n");
-    else BUF_APPEND(fmt,c);
-}
-
-void fmt_append_str(char *s) {
-    assert(s);
-    while(*s) fmt_append(*(s++));
 }
 
 void parse_sql(char *s, char *tbl, char *where, size_t n) {
@@ -132,8 +131,8 @@ int main(int argc, char **argv) {
     FILE *template = fopen(argv[1], "r");
     if(!template) error("Couldn't open template file \"%s\" for reading\n", argv[1]);
 
-    char select_buf[BUF_SIZE];
-    size_t select_buf_n = 0;
+    char buf[BUF_SIZE];
+    size_t buf_n = 0;
     enum {START, SELECT} state = START;
     int c;
 
@@ -144,32 +143,36 @@ int main(int argc, char **argv) {
         case START:
             if((c = match_double(c, '{', template)) == 0) {
                 state = SELECT;
-                printf("    fputs(\"%.*s\", stdout);\n", (int)fmt_n, fmt);
-                fmt_n = 0;
+                BUF_APPEND(buf, '\0');
+                fputs("    fputs(\"", stdout);
+                print_cstr_esc(buf);
+                fputs("\", stdout);\n", stdout);
+                buf_n = 0;
                 break;
             }
 
-            fmt_append(c);
+            BUF_APPEND(buf, c);
             break;
 
         case SELECT:
             if((c = match_double(c, '}', template)) == 0) {
                 state = START;
-                BUF_APPEND(select_buf, '\0');
+                BUF_APPEND(buf, '\0');
 
                 char where[BUF_SIZE] = {0}, tbl[BUF_SIZE] = {0};
-                parse_sql(select_buf, tbl, where, BUF_SIZE);
+                parse_sql(buf, tbl, where, BUF_SIZE);
 
-                printf("    vals = select(\"%s\", 1, %s, %s);\n",
-                        select_buf,
+                printf("    vals = select(\"");
+                print_cstr_esc(buf);
+                printf("\", 1, %s, %s);\n",
                         tbl[0]?tbl:"tbl",
                         where[0]?where:"where");
                 puts("    printf(\"%s\", vals[0]);");
-                select_buf_n = 0;
+                buf_n = 0;
                 break;
             }
 
-            BUF_APPEND(select_buf, c);
+            BUF_APPEND(buf, c);
             break;
 
         default: assert(0); //Unexpected state value
@@ -177,7 +180,12 @@ int main(int argc, char **argv) {
     }
 
     if(state != START) error("Unmatched {{");
-    if(fmt_n > 0) printf("    fputs(\"%.*s\", stdout);\n", (int)fmt_n, fmt);
+    if(buf_n > 0) {
+        BUF_APPEND(buf, '\0');
+        fputs("    fputs(\"", stdout);
+        print_cstr_esc(buf);
+        fputs("\", stdout);\n", stdout);
+    }
 
     print_final();
 
