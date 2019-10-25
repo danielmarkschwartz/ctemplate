@@ -91,6 +91,9 @@ void print_preamble(void) {
             "   char *tbl = NULL;\n"
             "   char *rows[ROWS_MAX];\n"
             "   size_t rows_n = 0;\n"
+            "   FILE *file;\n"
+            "   int got;\n"
+            "   char buf[BUF_SIZE];\n"
             "\n"
             "   for(int i = 1; i < argc; i++) {\n"
             "       if(strcmp(\"--where\", argv[i]) == 0) {\n"
@@ -174,7 +177,7 @@ int main(int argc, char **argv) {
     char buf[BUF_SIZE];
     size_t buf_n = 0;
     enum {START, SELECT, SELECT_TYPE, SELECT_END} state = START;
-    enum {UNESC, URLESC, HTMLESC, ASSERT, NOTASSERT, ENDBLOCK, FOREACH, FORELSE, EXECUTE} type;
+    enum {UNESC, URLESC, HTMLESC, ASSERT, NOTASSERT, ENDBLOCK, FOREACH, FORELSE, EXECUTE, INCLUDE} type;
     int c;
 
     print_preamble();
@@ -211,6 +214,7 @@ int main(int argc, char **argv) {
                 case '#': type = FOREACH; continue;
                 case '~': type = FORELSE; continue;
                 case '!': type = EXECUTE; continue;
+                case '<': type = INCLUDE; continue;
                 default: type = HTMLESC;
             }
             //fallthrough
@@ -260,6 +264,13 @@ int main(int argc, char **argv) {
                         break;
                     case EXECUTE:
                         puts("  fflush(stdout);system(vals[0]); done();");
+                        break;
+                    case INCLUDE:
+                        puts("  file = fopen(vals[0], \"r\");\n"
+                             "  if(!file) error(\"Couldn't open file %s\", vals[0]);\n"
+                             "  while((got = fread(buf, 1, BUF_SIZE, file)))\n"
+                             "      while((got -= fwrite(buf, 1, got, stdout)));\n"
+                             );
                         break;
 
                     default: assert(0); //Unknown tag type
