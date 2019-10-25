@@ -236,9 +236,9 @@ int main(int argc, char **argv) {
                 }
 
                 switch(type) {
-                    case HTMLESC: puts("    print_esc_html(vals[0]); done();"); break;
-                    case URLESC: puts("    print_esc_url(vals[0]); done();"); break;
-                    case UNESC: puts("    fputs(vals[0], stdout); done();"); break;
+                    case HTMLESC: puts("    if(vals_ok(vals)) print_esc_html(vals[0]); done();"); break;
+                    case URLESC: puts("    if(vals_ok(vals)) print_esc_url(vals[0]); done();"); break;
+                    case UNESC: puts("    if(vals_ok(vals)) fputs(vals[0], stdout); done();"); break;
                     case ASSERT: puts("    if(vals_ok(vals)){done();"); break;
                     case NOTASSERT: puts("    if(!vals_ok(vals)){done();"); break;
                     case ENDBLOCK: puts("    }"); break;
@@ -253,6 +253,7 @@ int main(int argc, char **argv) {
                              "        rows[rows_n++] = vals[0];\n"
                              "        vals = select(NULL, 1, NULL, NULL);\n"
                              "    }\n"
+                             "    done();\n"
                              "    for(int i = 0; i < rows_n; i++){\n"
                              "        char where_buf[BUF_SIZE];\n"
                              "        snprintf(where_buf, BUF_SIZE, \"rowid=%s\", rows[i]);\n"
@@ -266,7 +267,7 @@ int main(int argc, char **argv) {
                         puts("  fflush(stdout);system(vals[0]); done();");
                         break;
                     case INCLUDE:
-                        puts("  file = fopen(vals[0], \"r\");\n"
+                        puts("  file = fopen(vals[0], \"r\"); done();\n"
                              "  if(!file) error(\"Couldn't open file %s\", vals[0]);\n"
                              "  while((got = fread(buf, 1, BUF_SIZE, file)))\n"
                              "      while((got -= fwrite(buf, 1, got, stdout)));\n"
