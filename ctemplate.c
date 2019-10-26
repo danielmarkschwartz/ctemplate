@@ -20,13 +20,13 @@ void print_preamble(void) {
             "\n"
             "#define SQL_MAX 1024\n"
             "#define ROWS_MAX 1024\n"
-            "#define BUF_SIZE 1024\n"
+            "#define BUF_SIZE 1024*1024\n"
             "#define error(errmsg, ...) do{ fprintf(stderr, \"ERROR: \" errmsg ,##__VA_ARGS__); exit(1); }while(0)\n"
             "\n"
             "sqlite3 *db;\n"
             "\n"
-            "int vals_ok(char **vals){\n"
-            "   return vals && vals[0] && strlen(vals[0]) > 0 && strcmp(vals[0], \"0\") != 0;\n"
+            "int val_ok(char *val){\n"
+            "   return val && strlen(val) > 0 && strcmp(val, \"0\") != 0 && strcmp(val, \"false\") != 0;\n"
             "}\n"
             "\n"
             "void print_esc_html(char *s){\n"
@@ -68,7 +68,7 @@ void print_preamble(void) {
             "   }\n"
             "}\n"
             "\n"
-            "char **select(char *sel, size_t n, char *tbl, char *where){\n"
+            "char *select(char *sel, char *tbl, char *where){\n"
             "   if(!res) {"
             "       char sql[SQL_MAX];\n"
             "       int got = snprintf(sql, SQL_MAX, \"SELECT %s\", sel);\n"
@@ -85,13 +85,7 @@ void print_preamble(void) {
             "   int step = sqlite3_step(res);\n"
             "   if (step != SQLITE_ROW) {done(); return NULL;}\n"
             "\n"
-            "   char **vals = malloc(sizeof(*vals) * n);\n"
-            "   if(!vals) {done(); return NULL;}\n"
-            "\n"
-            "   for(size_t i = 0; i < n; i++)\n"
-            "       vals[i] = strdup((const char *)sqlite3_column_text(res, i));\n"
-            "\n"
-            "   return vals;\n"
+            "   return (char *)sqlite3_column_text(res, 0);\n"
             "}\n"
             "\n"
             "int main(int argc, char **argv){\n"
@@ -122,7 +116,7 @@ void print_preamble(void) {
             "   if (rc != SQLITE_OK)\n"
             "       error(\"Cannot open database: %s\\n\", sqlite3_errmsg(db));\n"
             "\n"
-            "   char **vals;\n"
+            "   char *val;\n"
           );
 }
 
@@ -141,6 +135,7 @@ void print_cstr_esc(char *s) {
     assert(s);
     for(;*s;s++) {
         switch(*s) {
+            case '\t': fputs("\\t", stdout); break;
             case '\n': fputs("\\n", stdout); break;
             case '\\': fputs("\\\\", stdout); break;
             case '"': fputs("\\\"", stdout); break;
@@ -249,31 +244,31 @@ int main(int argc, char **argv) {
                 parse_sql(buf, tbl, where, BUF_SIZE);
 
                 if(type != ENDBLOCK && type != FOREACH && type != FORELSE && type != SUBTEMPLATE) {
-                    printf("    vals = select(\"");
+                    printf("    val = select(\"");
                     print_cstr_esc(buf);
-                    printf("\", 1, %s, %s);\n",
+                    printf("\", %s, %s);\n",
                             tbl[0]?tbl:"tbl",
-                            where[0]?where:"where");
+                            where[0]?where:(tbl[0]?"NULL":"where"));
                 }
 
                 switch(type) {
-                    case HTMLESC: puts("    if(vals_ok(vals)) print_esc_html(vals[0]); done();"); break;
-                    case URLESC: puts("    if(vals_ok(vals)) print_esc_url(vals[0]); done();"); break;
-                    case SPACEESC: puts("    if(vals_ok(vals)) print_esc_space(vals[0]); done();"); break;
-                    case UNESC: puts("    if(vals_ok(vals)) fputs(vals[0], stdout); done();"); break;
-                    case ASSERT: puts("    if(vals_ok(vals)){done();"); break;
-                    case NOTASSERT: puts("    if(!vals_ok(vals)){done();"); break;
+                    case HTMLESC: puts("    if(val_ok(val)) print_esc_html(val); done();"); break;
+                    case URLESC: puts("    if(val_ok(val)) print_esc_url(val); done();"); break;
+                    case SPACEESC: puts("    if(val_ok(val)) print_esc_space(val); done();"); break;
+                    case UNESC: puts("    if(val_ok(val)) fputs(val, stdout); done();"); break;
+                    case ASSERT: puts("    if(val_ok(val)){done();"); break;
+                    case NOTASSERT: puts("    if(!val_ok(val)){done();"); break;
                     case ENDBLOCK: puts("    }"); break;
                     case FOREACH:
                         fputs(
-                             "    vals = select(\"rowid\", 1, tbl, \"", stdout);
+                             "    val = select(\"rowid\", tbl, \"", stdout);
                         print_cstr_esc(buf);
                         puts("\");\n"
                              "    rows_n = 0;\n"
-                             "    while(vals) {\n"
+                             "    while(val) {\n"
                              "        assert(rows_n < ROWS_MAX);\n"
-                             "        rows[rows_n++] = vals[0];\n"
-                             "        vals = select(NULL, 1, NULL, NULL);\n"
+                             "        rows[rows_n++] = strdup(val);\n"
+                             "        val = select(NULL, NULL, NULL);\n"
                              "    }\n"
                              "    done();\n"
                              "    for(int i = 0; i < rows_n; i++){\n"
@@ -286,11 +281,11 @@ int main(int argc, char **argv) {
                         puts("   }if(rows_n == 0){");
                         break;
                     case EXECUTE:
-                        puts("  fflush(stdout);system(vals[0]); done();");
+                        puts("  fflush(stdout);system(val); done();");
                         break;
                     case INCLUDE:
-                        puts("  file = fopen(vals[0], \"r\"); done();\n"
-                             "  if(!file) error(\"Couldn't open file %s\", vals[0]);\n"
+                        puts("  file = fopen(val, \"r\"); done();\n"
+                             "  if(!file) error(\"Couldn't open file %s\", val);\n"
                              "  while((got = fread(buf, 1, BUF_SIZE, file)))\n"
                              "      while((got -= fwrite(buf, 1, got, stdout)));\n"
                              );
