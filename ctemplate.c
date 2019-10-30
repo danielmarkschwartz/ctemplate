@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <ctype.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -68,14 +69,16 @@ void print_preamble(void) {
             "   }\n"
             "}\n"
             "\n"
-            "char *select(char *sel, char *tbl, char *where){\n"
+            "char *select(char *sel, char *tbl, char *where, char *final){\n"
             "   if(!res) {"
             "       char sql[SQL_MAX];\n"
             "       int got = snprintf(sql, SQL_MAX, \"SELECT %s\", sel);\n"
-            "       if(tbl && strstr(sel, \"FROM\") == NULL)\n"
+            "       if(tbl)\n"
             "           got += snprintf(&sql[got], SQL_MAX, \" FROM %s\", tbl);\n"
-            "       if(where && strstr(sel, \"WHERE\") == NULL)\n"
+            "       if(where)\n"
             "           got += snprintf(&sql[got], SQL_MAX, \" WHERE %s\", where);\n"
+            "       if(final)\n"
+            "           got += snprintf(&sql[got], SQL_MAX, \" %s\", final);\n"
             "\n"
             "       int rc = sqlite3_prepare_v2(db, sql, -1, &res, 0);\n"
             "       if (rc != SQLITE_OK) \n"
@@ -154,23 +157,50 @@ int match_double(int i, char c, FILE *f) {
     return i;
 }
 
-void parse_sql(char *s, char *tbl, char *where, size_t n) {
-    char *w;
-    for(;;) {
-        w = strsep(&s, " ");
+char *strip_space(char *s) {
+    if(!s) return s;
+    while(isspace(*s)) s++;
+    char *ret = s;
+    while(*s) s++;
+    while(s>ret && isspace(*(s-1))) {
+        s--;
+        *s = 0;
+    }
+    return ret;
+}
+
+void parse_sql(char *s, char **select, char **tbl, char **where, char **final) {
+    *select = 0;
+    *tbl = 0;
+    *where = 0;
+    *final = 0;
+
+    do{
+        *select = s;
+        char *w = strsep(&s, ";");
         if(w == NULL) break;
 
-        if(strcmp("FROM", w) == 0) {
-            w = strsep(&s, " ");
-            snprintf(tbl, n, "\"%s\"", w);
-        } else
-        if(strcmp("WHERE", w) == 0) {
-            w = strsep(&s, " ");
-            snprintf(where, n, "\"%s\"", w);
-        } else {
-        }
+        *where = s;
+        w = strsep(&s, ";");
+        if(w == NULL) break;
 
-    }
+        *tbl = s;
+        w = strsep(&s, ";");
+        if(w == NULL) break;
+
+        *final = s;
+    }while(0);
+
+    *select = strip_space(*select);
+    *tbl = strip_space(*tbl);
+    *where = strip_space(*where);
+    *final = strip_space(*final);
+
+    if(*select && !**select) *select = NULL;
+    if(*tbl && !**tbl) *tbl = NULL;
+    if(*where && !**where) *where = NULL;
+    if(*final && !**final) *final = NULL;
+
 }
 
 int main(int argc, char **argv) {
@@ -240,15 +270,26 @@ int main(int argc, char **argv) {
                 state = SELECT_END;
                 BUF_APPEND(buf, '\0');
 
-                char where[BUF_SIZE] = {0}, tbl[BUF_SIZE] = {0};
-                parse_sql(buf, tbl, where, BUF_SIZE);
 
                 if(type != ENDBLOCK && type != FOREACH && type != FORELSE && type != SUBTEMPLATE) {
+                    char *select, *where, *tbl, *final;
+                    parse_sql(buf, &select, &tbl, &where, &final);
+                    printf("//GET %s, %s, %s, %s\n",select, tbl, where, final);
                     printf("    val = select(\"");
-                    print_cstr_esc(buf);
-                    printf("\", %s, %s);\n",
-                            tbl[0]?tbl:"tbl",
-                            where[0]?where:(tbl[0]?"NULL":"where"));
+                    print_cstr_esc(select);
+                    printf("\"");
+
+                    if (tbl) printf(", \"%s\"", tbl);
+                    else printf(", tbl");
+
+                    if (where) printf(", \"%s\"", where);
+                    else {
+                        if(tbl) printf(", NULL");
+                        else printf(", where");
+                    }
+
+                    if (final) printf(", \"%s\");", final);
+                    else printf(", NULL);");
                 }
 
                 switch(type) {
@@ -263,12 +304,12 @@ int main(int argc, char **argv) {
                         fputs(
                              "    val = select(\"rowid\", tbl, \"", stdout);
                         print_cstr_esc(buf);
-                        puts("\");\n"
+                        puts("\", NULL);\n"
                              "    rows_n = 0;\n"
                              "    while(val) {\n"
                              "        assert(rows_n < ROWS_MAX);\n"
                              "        rows[rows_n++] = strdup(val);\n"
-                             "        val = select(NULL, NULL, NULL);\n"
+                             "        val = select(NULL, NULL, NULL, NULL);\n"
                              "    }\n"
                              "    done();\n"
                              "    for(int i = 0; i < rows_n; i++){\n"
@@ -294,7 +335,7 @@ int main(int argc, char **argv) {
                         templates_i++;
                         if(templates_i >= TEMPLATES_MAX) error("Max template inclusion depth exceeded: %i", TEMPLATES_MAX);
                         templates[templates_i] = fopen(buf, "r");
-                        if(templates[templates_i] == NULL) error("Couldn't open subtemplate %s", buf);
+                        if(templates[templates_i] == NULL) error("Couldn't open subtemplate '%s'", buf);
                         break;
 
                     default: assert(0); //Unknown tag type
