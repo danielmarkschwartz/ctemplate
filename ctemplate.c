@@ -271,12 +271,13 @@ int main(int argc, char **argv) {
                 BUF_APPEND(buf, '\0');
 
 
-                if(type != ENDBLOCK && type != FOREACH && type != FORELSE && type != SUBTEMPLATE) {
+                if(type != ENDBLOCK && type != FORELSE && type != SUBTEMPLATE) {
                     char *select, *where, *tbl, *final;
                     parse_sql(buf, &select, &tbl, &where, &final);
                     printf("//GET %s, %s, %s, %s\n",select, tbl, where, final);
                     printf("    val = select(\"");
-                    print_cstr_esc(select);
+                    if(type!=FOREACH) print_cstr_esc(select);
+                    else printf("rowid");
                     printf("\"");
 
                     if (tbl) printf(", \"%s\"", tbl);
@@ -301,11 +302,7 @@ int main(int argc, char **argv) {
                     case NOTASSERT: puts("    if(!val_ok(val)){done();"); break;
                     case ENDBLOCK: puts("    }"); break;
                     case FOREACH:
-                        fputs(
-                             "    val = select(\"rowid\", tbl, \"", stdout);
-                        print_cstr_esc(buf);
-                        puts("\", NULL);\n"
-                             "    rows_n = 0;\n"
+                        puts("    rows_n = 0;\n"
                              "    while(val) {\n"
                              "        assert(rows_n < ROWS_MAX);\n"
                              "        rows[rows_n++] = strdup(val);\n"
