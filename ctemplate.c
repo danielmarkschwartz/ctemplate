@@ -300,7 +300,7 @@ int main(int argc, char **argv) {
                     case UNESC: puts("    if(val_ok(val)) fputs(val, stdout); done();"); break;
                     case ASSERT: puts("    if(val_ok(val)){done();"); break;
                     case NOTASSERT: puts("    if(!val_ok(val)){done();"); break;
-                    case ENDBLOCK: puts("    }"); break;
+                    case ENDBLOCK: puts("    }done();"); break;
                     case FOREACH:
                         puts("    rows_n = 0;\n"
                              "    while(val) {\n"
