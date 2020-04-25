@@ -55,10 +55,19 @@ void print_preamble(void) {
             "\n"
             "void print_esc_space(char *s){\n"
             "   assert(s);\n"
-            "   for(;*s;s++){"
+            "   for(;*s;s++){\n"
             "       if(*s != ' ')\n"
             "           putchar(*s);\n"
             "       else putchar('_');\n"
+            "   }\n"
+            "}\n"
+            "\n"
+            "void print_esc_str(char *s){\n"
+            "   assert(s);\n"
+            "   for(;*s;s++){"
+            "       if(*s == '\"' || *s == '\\\\')\n"
+            "           putchar('\\\\');\n"
+            "       putchar(*s);\n"
             "   }\n"
             "}\n"
             "\n"
@@ -216,7 +225,7 @@ int main(int argc, char **argv) {
     char buf[BUF_SIZE];
     size_t buf_n = 0;
     enum {START, SELECT, SELECT_TYPE, SELECT_END} state = START;
-    enum {UNESC, URLESC, SPACEESC, HTMLESC, ASSERT, NOTASSERT, ENDBLOCK, FOREACH, FORELSE, EXECUTE, INCLUDE, SUBTEMPLATE} type;
+    enum {UNESC, STRESC, URLESC, SPACEESC, HTMLESC, ASSERT, NOTASSERT, ENDBLOCK, FOREACH, FORELSE, EXECUTE, INCLUDE, SUBTEMPLATE} type;
     int c;
 
     print_preamble();
@@ -255,6 +264,7 @@ int main(int argc, char **argv) {
                 case '&': type = UNESC; continue;
                 case '%': type = URLESC; continue;
                 case '_': type = SPACEESC; continue;
+                case '\\': type = STRESC; continue;
                 case '?': type = ASSERT; continue;
                 case '^': type = NOTASSERT; continue;
                 case '/': type = ENDBLOCK; continue;
@@ -299,6 +309,7 @@ int main(int argc, char **argv) {
                     case HTMLESC: puts("    if(val_ok(val)) print_esc_html(val); done();"); break;
                     case URLESC: puts("    if(val_ok(val)) print_esc_url(val); done();"); break;
                     case SPACEESC: puts("    if(val_ok(val)) print_esc_space(val); done();"); break;
+                    case STRESC: puts("    if(val_ok(val)) print_esc_str(val); done();"); break;
                     case UNESC: puts("    if(val_ok(val)) fputs(val, stdout); done();"); break;
                     case ASSERT: puts("    if(val_ok(val)){done();"); break;
                     case NOTASSERT: puts("    if(!val_ok(val)){done();"); break;
